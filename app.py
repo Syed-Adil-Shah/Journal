@@ -8,9 +8,28 @@ st.set_page_config(page_title="Trade Journal", layout="wide")
 
 DATA_FILE = "trade_journal.csv"
 
-# --------------------
-# Load or Create CSV
-# --------------------
+# Custom CSS for better visuals
+st.markdown(
+    """
+    <style>
+        .metric-label { font-size: 14px; color: #AAAAAA; }
+        .metric-value { font-size: 26px; font-weight: bold; }
+        .win { color: #00FFAA; font-weight: bold; }
+        .loss { color: #FF4B4B; font-weight: bold; }
+        .side-badge {
+            padding: 2px 8px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+        }
+        .long { background-color: #3AAFA9; }
+        .short { background-color: #FF6B6B; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Load or create data
 if os.path.exists(DATA_FILE):
     df = pd.read_csv(DATA_FILE)
 else:
@@ -19,10 +38,8 @@ else:
         "Confluence", "Strategy Name", "Result", "Why it happened?", "Profit & Loss", "P&L (%)"
     ])
 
-# --------------------
-# Sidebar - Add Trade
-# --------------------
-st.sidebar.header("Add New Trade")
+# Sidebar form
+st.sidebar.header("➕ Add New Trade")
 
 with st.sidebar.form("trade_form"):
     instrument = st.selectbox("Instrument", ["Crypto", "Stocks", "Forex", "Other"])
@@ -41,7 +58,7 @@ with st.sidebar.form("trade_form"):
     if submitted:
         if position == "Long":
             pl = sell_price - entry_price
-        else:  # Short
+        else:
             pl = entry_price - sell_price
         pl_percent = (pl / entry_price * 100) if entry_price != 0 else 0
 
@@ -65,14 +82,13 @@ with st.sidebar.form("trade_form"):
         df.to_csv(DATA_FILE, index=False)
         st.sidebar.success("Trade added!")
 
-# --------------------
-# Dashboard
-# --------------------
-st.title("📈 Trade Journal Dashboard")
+# Dashboard UI
+st.title("📊 Trade Journal Dashboard")
 
 if df.empty:
     st.info("No trades logged yet. Add one using the sidebar.")
 else:
+    st.subheader("🔹 Performance Overview")
     col1, col2, col3, col4 = st.columns(4)
 
     total_trades = len(df)
@@ -90,13 +106,22 @@ else:
     col3.metric("Avg Profit", f"${avg_profit}")
     col4.metric("Avg Loss", f"${avg_loss}")
 
-    # Pie Chart
-    st.subheader("📊 Win vs Loss Distribution")
+    # Line chart for cumulative P&L
+    df["Cumulative P&L"] = df["Profit & Loss"].cumsum()
+    st.subheader("📈 Cumulative P&L Over Time")
+    line_chart = alt.Chart(df).mark_line().encode(
+        x="Date:T",
+        y="Cumulative P&L:Q",
+        tooltip=["Date", "Cumulative P&L"]
+    ).properties(height=300)
+    st.altair_chart(line_chart, use_container_width=True)
+
+    # Pie chart of win/loss
+    st.subheader("🟢 Win vs 🔴 Loss Distribution")
     pie_data = pd.DataFrame({
         "Result": ["Wins", "Losses"],
         "Count": [len(wins), len(losses)]
     })
-
     pie_chart = alt.Chart(pie_data).mark_arc(innerRadius=50).encode(
         theta="Count",
         color="Result",
@@ -104,6 +129,18 @@ else:
     )
     st.altair_chart(pie_chart, use_container_width=True)
 
-    # Trade Table
+    # Styled Table
     st.subheader("📋 Trade Log")
-    st.dataframe(df[::-1], use_container_width=True)
+    styled_df = df.copy()
+    styled_df["Status"] = styled_df["Profit & Loss"].apply(lambda x: "WIN" if x > 0 else "LOSS")
+    styled_df["Side"] = styled_df["Position"].apply(
+        lambda x: f'<span class="side-badge {"long" if x == "Long" else "short"}">{x}</span>'
+    )
+    styled_df["Status"] = styled_df["Status"].apply(
+        lambda x: f'<span class="{x.lower()}">{x}</span>'
+    )
+
+    st.write(styled_df[[
+        "Date", "Trade Name", "Instrument", "Side", "Entry Price", "Sell Price", 
+        "TP", "SL", "Strategy Name", "Status", "Profit & Loss", "P&L (%)"
+    ]].to_html(escape=False, index=False), unsafe_allow_html=True)
